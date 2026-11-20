@@ -32,7 +32,9 @@
       home: "/home/ana",
       cwd: "/home/ana/work",
       prev: "/home/ana/work",
-      env: { HOME: "/home/ana", USER: "ana", PATH: "/usr/bin", SHELL: "/bin/bash" },
+      env: { HOME: "/home/ana", USER: "ana", PATH: "/usr/bin", SHELL: "/bin/bash", PS1: "\\u@\\h:\\w\\$ " },
+      nullglob: false,
+      dotglob: false,
       arrays: {},
       fns: {},
       aliases: {},
@@ -229,6 +231,11 @@
       if (cur === "") return expandVars(state, def[2]);
       return cur;
     }
+    var slen = body.match(/^#([A-Za-z_][A-Za-z0-9_]*)$/);
+    if (slen) {
+      var sv = Object.prototype.hasOwnProperty.call(state.env, slen[1]) ? String(state.env[slen[1]]) : "";
+      return String(sv.length);
+    }
     return lookup(state, body);
   }
 
@@ -367,9 +374,10 @@
     var abs = dirPart.charAt(0) === "/" ? normalize(dirPart) : resolve(state, dirPart);
     var node = state.files[abs];
     if (!node || node.kind !== "dir") return [pattern];
-    var showHidden = baseName.charAt(0) === ".";
+    var showHidden = state.dotglob || baseName.charAt(0) === ".";
     var re = globToReg(baseName);
     var hits = children(state, abs).map(function (ch) { return ch.name; }).filter(function (name) {
+      if (name === "." || name === "..") return false;
       if (!showHidden && name.charAt(0) === ".") return false;
       return re.test(name);
     });
@@ -440,13 +448,72 @@
     return tokens;
   }
 
+  function splitComma(s) {
+    var parts = [];
+    var buf = "";
+    var depth = 0;
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charAt(i);
+      if (c === "{") depth++;
+      if (c === "}") depth--;
+      if (c === "," && depth === 0) { parts.push(buf); buf = ""; continue; }
+      buf += c;
+    }
+    parts.push(buf);
+    return parts;
+  }
+  function expandBraces(word) {
+    var start = -1;
+    var depth = 0;
+    for (var i = 0; i < word.length; i++) {
+      var c = word.charAt(i);
+      if (c === "{") { if (depth === 0) start = i; depth++; }
+      else if (c === "}") {
+        depth--;
+        if (depth === 0 && start >= 0) {
+          var inner = word.slice(start + 1, i);
+          var alts = null;
+          var range = inner.match(/^(-?\d+)\.\.(-?\d+)$/);
+          if (range) {
+            alts = [];
+            var a = Number(range[1]);
+            var b = Number(range[2]);
+            var step = a <= b ? 1 : -1;
+            var guard = 0;
+            for (var n = a; step > 0 ? n <= b : n >= b; n += step) {
+              alts.push(String(n));
+              if (++guard > 40) break;
+            }
+          } else if (inner.indexOf(",") !== -1) alts = splitComma(inner);
+          if (alts) {
+            var pre = word.slice(0, start);
+            var post = word.slice(i + 1);
+            var out = [];
+            alts.forEach(function (alt) {
+              expandBraces(pre + alt + post).forEach(function (one) { out.push(one); });
+            });
+            return out;
+          }
+        }
+      }
+    }
+    return [word];
+  }
   function prepare(state, tok) {
-    var text = tok.word;
-    if (tok.mode !== "single" && (text === "~" || text.indexOf("~/") === 0)) text = state.home + text.slice(1);
-    if (tok.mode === "single") return [text];
-    var expanded = expandVars(state, text);
-    if (tok.mode === "none" && /[*?]/.test(expanded)) return globMany(state, expanded);
-    return [expanded];
+    if (tok.mode === "single") return [tok.word];
+    var pieces = tok.mode === "none" ? expandBraces(tok.word) : [tok.word];
+    var out = [];
+    pieces.forEach(function (piece) {
+      if (piece === "~" || piece.indexOf("~/") === 0) piece = state.home + piece.slice(1);
+      var expanded = expandVars(state, piece);
+      if (tok.mode === "none" && /[*?]/.test(expanded)) {
+        var hits = globMany(state, expanded);
+        var missed = hits.length === 1 && hits[0] === expanded;
+        if (missed && state.nullglob) return;
+        out = out.concat(hits);
+      } else out.push(expanded);
+    });
+    return out;
   }
 
   function linesOf(text) {
@@ -1481,12 +1548,115 @@
     COMMANDS.whoami = function (s) { return ok(s.user + "\n"); };
     COMMANDS.id = function (s) { return ok("uid=1000(ana) gid=1000(ana) groups=1000(ana),1001(staff)\n"); };
     COMMANDS.hostname = function (s) { return ok(s.host + "\n"); };
-    COMMANDS.date = function () { return ok("Mon Nov  2 09:04:01 UTC 2026\n"); };
+    COMMANDS.date = function (s, a) { return cmdDate(a); };
     COMMANDS.clear = function () { return { stdout: "", stderr: "", code: 0, clear: true }; };
     COMMANDS.sudo = function () { return bad("sudo: this lab stays the user ana. It will not switch to root. On a real host, sudo runs one command as root, and only if you are allowed."); };
     COMMANDS.nano = function () { return bad("nano: this lab has no full-screen editor. Use the script box, or cat."); };
     COMMANDS.vim = function () { return bad("vim: this lab has no full-screen editor. Press Esc :q! on a real host if you are stuck in vim. Here, use the script box."); };
-    COMMANDS.less = function () { return bad("less: not in this lab. Use cat, head, or tail."); };
+    COMMANDS.less = function (s, a) { return cmdLess(s, a); };
+    COMMANDS.printf = function (s, a) { return cmdPrintf(a); };
+    COMMANDS.tr = function (s, a, i) { return cmdTr(a, i); };
+    COMMANDS.read = function (s, a, i) { return cmdRead(s, a, i); };
+    COMMANDS.source = function (s, a) { return cmdSource(s, a); };
+    COMMANDS["."] = function (s, a) { return cmdSource(s, a); };
+    COMMANDS.shopt = function (s, a) { return cmdShopt(s, a); };
+    COMMANDS.ulimit = function (s, a) { return cmdUlimit(a); };
+  }
+
+  function expandTrSet(s) {
+    var out = "";
+    for (var i = 0; i < s.length; i++) {
+      if (s.charAt(i + 1) === "-" && s.charAt(i + 2)) {
+        var a = s.charCodeAt(i);
+        var b = s.charCodeAt(i + 2);
+        var step = a <= b ? 1 : -1;
+        for (var c = a; step > 0 ? c <= b : c >= b; c += step) out += String.fromCharCode(c);
+        i += 2;
+      } else out += s.charAt(i);
+    }
+    return out;
+  }
+  function cmdPrintf(argv) {
+    if (!argv.length) return bad("printf: missing format. Example: printf 'Hello %s\\n' ana");
+    var fmt = argv[0];
+    var args = argv.slice(1);
+    var ai = 0;
+    var out = "";
+    for (var i = 0; i < fmt.length; i++) {
+      if (fmt.charAt(i) === "\\" && fmt.charAt(i + 1) === "n") { out += "\n"; i++; continue; }
+      if (fmt.charAt(i) === "\\" && fmt.charAt(i + 1) === "t") { out += "\t"; i++; continue; }
+      if (fmt.charAt(i) === "%" && fmt.charAt(i + 1) === "%") { out += "%"; i++; continue; }
+      if (fmt.charAt(i) === "%" && (fmt.charAt(i + 1) === "s" || fmt.charAt(i + 1) === "d")) {
+        var spec = fmt.charAt(i + 1);
+        var arg = args[ai] == null ? "" : String(args[ai]);
+        ai++;
+        out += spec === "d" ? String(parseInt(arg, 10) || 0) : arg;
+        i++;
+        continue;
+      }
+      out += fmt.charAt(i);
+    }
+    return ok(out);
+  }
+  function cmdTr(argv, stdin) {
+    if (argv.length < 2) return bad("tr: need two sets. Example: echo ana | tr a-z A-Z");
+    var from = expandTrSet(argv[0]);
+    var to = expandTrSet(argv[1]);
+    if (!to.length) return bad("tr: empty set");
+    var map = {};
+    for (var i = 0; i < from.length; i++) map[from.charAt(i)] = to.charAt(Math.min(i, to.length - 1));
+    var out = "";
+    var text = stdin || "";
+    for (var k = 0; k < text.length; k++) {
+      var ch = text.charAt(k);
+      out += Object.prototype.hasOwnProperty.call(map, ch) ? map[ch] : ch;
+    }
+    return ok(out);
+  }
+  function cmdRead(state, argv, stdin) {
+    if (!stdin) return bad("read: this lab does not wait for the keyboard. Example: read line < notes.txt");
+    var i = 0;
+    if (argv[0] === "-r") i = 1;
+    var name = argv[i] || "REPLY";
+    state.env[name] = String(stdin).split("\n")[0];
+    return ok("");
+  }
+  function cmdSource(state, argv) {
+    if (!argv[0]) return bad("source: name a file");
+    var path = resolve(state, argv[0]);
+    var got = readPath(state, path);
+    if (got.code) return bad("source: " + argv[0] + ": No such file or directory");
+    return execLines(state, preprocess(got.stdout));
+  }
+  function cmdLess(state, argv) {
+    if (!argv[0]) return bad("less: name a file. Example: less app.log");
+    var got = readPath(state, resolve(state, argv[0]));
+    if (got.code) return got;
+    return ok(got.stdout + "less: end. On a real host, press q to leave, space for the next page, b for the previous page.\n");
+  }
+  function cmdDate(argv) {
+    var fmt = argv[0] && argv[0].charAt(0) === "+" ? argv[0].slice(1) : "";
+    if (!fmt) return ok("Mon Nov  2 09:04:01 UTC 2026\n");
+    var map = { Y: "2026", m: "11", d: "02", H: "09", M: "04", S: "01", F: "2026-11-02", T: "09:04:01", Z: "UTC" };
+    var out = "";
+    for (var i = 0; i < fmt.length; i++) {
+      if (fmt.charAt(i) === "%" && map[fmt.charAt(i + 1)] != null) { out += map[fmt.charAt(i + 1)]; i++; }
+      else out += fmt.charAt(i);
+    }
+    return ok(out + "\n");
+  }
+  function cmdShopt(state, argv) {
+    var flag = argv[0];
+    var name = argv[1];
+    if ((flag === "-s" || flag === "-u") && (name === "nullglob" || name === "dotglob")) {
+      state[name] = flag === "-s";
+      return ok("");
+    }
+    return ok("nullglob " + (state.nullglob ? "on" : "off") + "\ndotglob " + (state.dotglob ? "on" : "off") + "\n");
+  }
+  function cmdUlimit(argv) {
+    if (!argv.length || argv[0] === "-u") return ok("256\n");
+    return bad("ulimit: this lab shows -u, the maximum number of processes for one user");
   }
 
   function assign(state, line) {
@@ -1573,6 +1743,7 @@
       var hit = follow(state, path, 0);
       return hit ? hit.node : state.files[path];
     }
+    if (a.length === 2 && a[0] === "-t") return code(false);
     if (a.length === 2 && (a[0] === "-f" || a[0] === "-d" || a[0] === "-z" || a[0] === "-n")) {
       if (a[0] === "-z") return code(a[1] === "");
       if (a[0] === "-n") return code(a[1] !== "");
@@ -1591,7 +1762,7 @@
         return code(map[op]);
       }
     }
-    return bad("[: this lab supports = != -eq -ne -lt -le -gt -ge -f -d -z -n");
+    return bad("[: this lab supports = != -eq -ne -lt -le -gt -ge -f -d -z -n -t");
   }
 
   function runPipeline(state, line, stdin) {
@@ -1626,11 +1797,16 @@
     }
     var trimmed = text.trim();
     if (!trimmed) return finish(state, ok(""));
+    var timed = false;
+    if (trimmed.indexOf("time ") === 0) {
+      timed = true;
+      trimmed = trimmed.slice(5).trim();
+    }
     try {
-      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(trimmed)) {
-        return finish(state, assign(state, trimmed));
-      }
-      var res = runPipeline(state, trimmed, "");
+      var res;
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(trimmed)) res = assign(state, trimmed);
+      else res = runPipeline(state, trimmed, "");
+      if (timed) res.stderr = (res.stderr || "") + "real 0m0.012s\nuser 0m0.004s\nsys 0m0.000s\n";
       return finish(state, res);
     } catch (e) {
       return finish(state, nounsetResult(e));
@@ -1671,6 +1847,11 @@
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
       if (line === "do" || line === "then" || line === "{") continue;
+      if (line === "return" || line.indexOf("return ") === 0) {
+        var raw = line === "return" ? "0" : line.slice(7).trim();
+        var rc = /^-?\d+$/.test(raw) ? Number(raw) : 0;
+        return { stdout: stdout, stderr: stderr, code: rc, clear: false };
+      }
       var fn = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\(\)\s*\{?$/);
       if (fn) {
         var start = i + 1;
@@ -1825,6 +2006,23 @@
       } else if (e.key === "ArrowDown") {
         if (hi < local.length) hi++;
         input.value = local[hi] || "";
+        e.preventDefault();
+      } else if (e.ctrlKey && (e.key === "a" || e.key === "A")) {
+        input.setSelectionRange(0, 0);
+        e.preventDefault();
+      } else if (e.ctrlKey && (e.key === "e" || e.key === "E")) {
+        var end = input.value.length;
+        input.setSelectionRange(end, end);
+        e.preventDefault();
+      } else if (e.ctrlKey && (e.key === "u" || e.key === "U")) {
+        input.value = input.value.slice(input.selectionStart);
+        input.setSelectionRange(0, 0);
+        e.preventDefault();
+      } else if (e.ctrlKey && (e.key === "w" || e.key === "W")) {
+        var at = input.selectionStart;
+        var left = input.value.slice(0, at).replace(/\s*\S+\s*$/, "");
+        input.value = left + input.value.slice(at);
+        input.setSelectionRange(left.length, left.length);
         e.preventDefault();
       }
     });

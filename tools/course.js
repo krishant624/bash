@@ -1036,4 +1036,65 @@ var glossary = [
   ["jq", "A tool that reads JSON and prints selected fields as text.", "jq.html"]
 ];
 
+var extra = require("./gap-lessons.js");
+
+function topicById(id) {
+  for (var i = 0; i < topics.length; i++) if (topics[i].id === id) return topics[i];
+  throw new Error("missing topic " + id);
+}
+function after(topicId, file, list) {
+  var lessons = topicById(topicId).lessons;
+  var i = 0;
+  for (; i < lessons.length; i++) if (lessons[i].file === file) break;
+  if (i === lessons.length) throw new Error("missing lesson " + file);
+  lessons.splice.apply(lessons, [i + 1, 0].concat(list));
+}
+function before(topicId, file, list) {
+  var lessons = topicById(topicId).lessons;
+  var i = 0;
+  for (; i < lessons.length; i++) if (lessons[i].file === file) break;
+  if (i === lessons.length) throw new Error("missing lesson " + file);
+  lessons.splice.apply(lessons, [i, 0].concat(list));
+}
+function moveAfter(topicId, file, afterFile) {
+  var lessons = topicById(topicId).lessons;
+  var from = -1;
+  var to = -1;
+  for (var i = 0; i < lessons.length; i++) {
+    if (lessons[i].file === file) from = i;
+    if (lessons[i].file === afterFile) to = i;
+  }
+  if (from < 0 || to < 0) throw new Error("cannot move " + file);
+  var lesson = lessons.splice(from, 1)[0];
+  if (from < to) to--;
+  lessons.splice(to + 1, 0, lesson);
+}
+
+after("files", "ls.html", extra.afterLs);
+after("files", "globs.html", extra.afterGlobs);
+after("files", "alias.html", extra.afterAlias);
+after("text", "tail.html", extra.afterTail);
+after("text", "grep.html", extra.afterGrep);
+after("text", "cut.html", extra.afterCut);
+before("bash", "syntax.html", extra.beforeSyntax);
+after("bash", "variables.html", extra.afterVariables);
+after("bash", "operators.html", extra.afterOperators);
+after("bash", "exit-status.html", extra.afterExit);
+moveAfter("bash", "case.html", "if.html");
+after("bash", "case.html", extra.afterCase);
+after("bash", "while-loop.html", extra.afterWhile);
+after("bash", "functions.html", extra.afterFunctions);
+after("bash", "arrays.html", extra.afterArrays);
+after("bash", "strings.html", extra.afterStrings);
+after("bash", "args.html", extra.afterArgs);
+moveAfter("bash", "cron.html", "process-sub.html");
+after("bash", "traps.html", extra.afterTraps);
+after("bash", "pitfalls.html", extra.afterPitfalls);
+
+var scriptTopic = topicById("scripts");
+var at = topics.indexOf(scriptTopic);
+topics.splice(at, 0, extra.promptTopic);
+
+glossary = glossary.concat(extra.glossary);
+
 module.exports = { topics: topics, glossary: glossary };
