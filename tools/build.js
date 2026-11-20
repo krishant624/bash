@@ -73,7 +73,7 @@ function command(text, parts, label) {
 }
 
 var pictures = {
-  path: flow(["Start", "Files", "Text", "Host", "Network", "Script"], "The path through the course"),
+  path: flow(["Start", "Files", "Text", "Host", "Network", "Bash", "Scripts"], "The path through the course"),
   shell: flow(["You type", "Bash", "Program", "Kernel"], "A command travels from your keyboard to the kernel"),
   places: flow(["Your screen", "ssh", "lab", "Bash prompt"], "Opening a shell on a host"),
   split: command("grep -n ERROR app.log", [
@@ -198,6 +198,30 @@ var pictures = {
     { text: "*", note: "weekday" },
     { text: "du -sh", note: "command" }
   ], "Five fields, then the command. This one is every five minutes"),
+  case: flow(["start", "case $1", "match", "branch"], "case picks one branch from many patterns"),
+  strings: flow(["path=/a/b.txt", "${path##*/}", "b.txt"], "Parameter expansion edits text without a second command"),
+  args: flow(["-n -f file", "getopts", "flags set", "rest args"], "getopts walks short options one letter at a time"),
+  traps: flow(["mktemp", "work", "EXIT", "cleanup"], "trap runs cleanup when the script ends"),
+  debug: flow(["bash -n", "syntax ok", "bash -x", "trace lines"], "Check the text first, then watch it run"),
+  flock: flow(["cron fires", "flock -n", "run or skip"], "A lock keeps two copies from overlapping"),
+  jq: flow(["curl JSON", "jq .field", "plain text"], "jq pulls one field out of a JSON reply"),
+  security: flow(["untrusted input", "no eval", "quoted \"$var\""], "Treat outside text as data, never as code"),
+  pitfalls: flow(["unquoted $var", "word split", "wrong args"], "Most Bash bugs are quoting and word-splitting"),
+  style: flow(["shebang", "set -euo", "main \"$@\""], "A short header, then one main entry"),
+  sheet: fields([
+    { text: "set -euo", note: "strict" },
+    { text: "[[ ]]", note: "test" },
+    { text: "\"$@\"", note: "args" },
+    { text: "trap", note: "cleanup" }
+  ], "Keep these four habits in every script"),
+  projects: flow(["template", "backup", "logs", "hosts"], "Study a finished script, then change one piece"),
+  template: flow(["getopts", "log/die", "trap", "main"], "The skeleton every project script starts from"),
+  backup: flow(["source dir", "tar.gz", "keep N", "rotate"], "Dated archives, then delete the oldest"),
+  logalyze: flow(["app.log", "grep counts", "top errors"], "Count ERROR, WARN, and INFO, then show samples"),
+  diskmon: flow(["df -hP", "threshold", "ALERT or OK"], "Exit 1 when any filesystem is too full"),
+  rename: flow(["*.txt", "lowercase", "dry-run", "--apply"], "Print the plan first. Rename only with --apply"),
+  sshrun: flow(["hosts file", "ssh each", "ok / fail"], "One command on many hosts, with a summary"),
+  iostat: flow(["df sample", "iostat?", "CSV row"], "Append timestamped metrics for later charts"),
   glossary: flow(["term", "plain meaning", "the lesson"], "Each word points back to the page that used it")
 };
 
@@ -313,8 +337,8 @@ function stripHtml(topics, currentTopic) {
 }
 
 function homeExtra() {
-  return '<h2>Who it is for</h2><p>Someone who SSHes into a Linux host and needs the shell: to read a log, copy a file, see why a disk is full, and write a short script that stops when something fails. The <a href="https://github.com/krishant624/linux-guide">Linux guide</a> is the wider map of a host. The <a href="https://github.com/krishant624/bash-guide">Bash guide</a> goes on to traps, locking, and scripts that visit many hosts.</p>' +
-    '<h2>Where this course goes further</h2><div class="cards wide"><div class="mini"><h3>Pipes</h3><p>stdin, stdout, and stderr, drawn as a stream, not one example of |.</p></div><div class="mini"><h3>Globs and quotes</h3><p>Why <code>*.txt</code> and <code>\'*.txt\'</code> are different words by the time a command starts.</p></div><div class="mini"><h3>find and links</h3><p>Walking a tree, and a name that points at another file.</p></div><div class="mini"><h3>PATH and exit codes</h3><p>Why a command disappears, and why zero means it worked.</p></div><div class="mini"><h3>df then du</h3><p>The disk is 20G. The practice files are not the reason.</p></div><div class="mini"><h3>chown fails</h3><p>You are not root. The lab shows the real refusal.</p></div></div>' +
+  return '<h2>Who it is for</h2><p>Someone who SSHes into a Linux host and needs the shell: to read a log, copy a file, see why a disk is full, and write a script that stops when something fails. The path runs from the prompt through Bash syntax, then into traps, getopts, locking, and finished project scripts under <code>scripts/</code>. The <a href="https://github.com/krishant624/linux-guide">Linux guide</a> is the wider map of a host.</p>' +
+    '<h2>Where this course goes further</h2><div class="cards wide"><div class="mini"><h3>Pipes</h3><p>stdin, stdout, and stderr, drawn as a stream, not one example of |.</p></div><div class="mini"><h3>Globs and quotes</h3><p>Why <code>*.txt</code> and <code>\'*.txt\'</code> are different words by the time a command starts.</p></div><div class="mini"><h3>find and links</h3><p>Walking a tree, and a name that points at another file.</p></div><div class="mini"><h3>PATH and exit codes</h3><p>Why a command disappears, and why zero means it worked.</p></div><div class="mini"><h3>Traps and getopts</h3><p>Cleanup on EXIT, and short options a script can parse.</p></div><div class="mini"><h3>Project scripts</h3><p>Backup, log summary, disk alert, rename, SSH runner, and a CSV sampler.</p></div></div>' +
     '<h2>The practice files</h2><div class="table-wrap wide"><table><thead><tr><th>Path</th><th>What it is for</th></tr></thead><tbody>' +
     "<tr><td><code>~/work/app.log</code></td><td>Five log lines. One of them is ERROR.</td></tr>" +
     "<tr><td><code>~/work/notes.txt</code></td><td>A short note about the lab.</td></tr>" +
@@ -322,8 +346,9 @@ function homeExtra() {
     "<tr><td><code>~/work/sizes.txt</code></td><td>The numbers 10, 2, and 1, so text sort and numeric sort disagree.</td></tr>" +
     "<tr><td><code>~/work/reports/monday.txt</code></td><td>A file in a subfolder, so find has somewhere to walk.</td></tr>" +
     "<tr><td><code>~/.bashrc</code></td><td>A saved alias. <code>ls</code> hides it until you ask.</td></tr>" +
+    "<tr><td><code>scripts/</code></td><td>Finished project scripts to study on a real host or in a disposable directory.</td></tr>" +
     "</tbody></table></div>" +
-    '<h2>How to practice</h2><ol class="steps"><li>Read the point and the picture.</li><li>Read the worked example. The output is what this lab prints.</li><li>Press Try the example, or type the command yourself.</li><li>Press Reset lab if you want the original files back.</li></ol>';
+    '<h2>How to practice</h2><ol class="steps"><li>Read the point and the picture.</li><li>Read the worked example. The output is what this lab prints.</li><li>Press Try the example, or type the command yourself.</li><li>Press Reset lab if you want the original files back.</li><li>For project scripts, open the file under <code>scripts/</code> and run it in a VM, WSL, or temp folder.</li></ol>';
 }
 
 function article(item, prev, next) {
@@ -333,6 +358,9 @@ function article(item, prev, next) {
   if (lesson.run && lesson.run.length) {
     example = "<h2>Worked example</h2><pre><code>" + esc(ran.text) + "</code></pre>";
   }
+  if (lesson.sample) {
+    example += "<h2>Example</h2><pre><code>" + esc(lesson.sample) + "</code></pre>";
+  }
   if (lesson.script) {
     example += "<h2>Script</h2><pre><code>" + esc(lesson.script) + "</code></pre>";
     if (ran.scriptOut.trim()) example += '<pre class="sample-out"><code>' + esc(ran.scriptOut.replace(/\n$/, "")) + "</code></pre>";
@@ -341,7 +369,7 @@ function article(item, prev, next) {
   var label = { insight: "Insight", mistake: "Mistake", analogy: "Analogy", caution: "Caution" }[kind] || "Insight";
   var nextHtml = '<div class="next">' +
     (prev ? '<a href="' + prev.lesson.file + '">← ' + esc(prev.lesson.title) + "</a>" : "<span></span>") +
-    (next ? '<a href="' + next.lesson.file + '">' + esc(next.lesson.title) + " →</a>" : '<a href="https://github.com/krishant624/bash-guide">Bash guide: traps, locking, and many hosts →</a>') +
+    (next ? '<a href="' + next.lesson.file + '">' + esc(next.lesson.title) + " →</a>" : "<span></span>") +
     "</div>";
   return "<h1>" + esc(lesson.title) + "</h1>" +
     '<p class="point"><strong>Point of this page.</strong> ' + esc(lesson.point) + "</p>" +
@@ -363,7 +391,7 @@ function glossaryArticle(item, prev) {
     '<p class="point"><strong>Point of this page.</strong> Each term, in plain words, and the lesson where it was used.</p>' +
     figure("glossary") +
     '<div class="table-wrap wide"><table><thead><tr><th>Term</th><th>Meaning</th><th>Lesson</th></tr></thead><tbody>' + rows + "</tbody></table></div>" +
-    '<p>The <a href="https://github.com/krishant624/linux-guide">Linux guide</a> is the wider host. The <a href="https://github.com/krishant624/bash-guide">Bash guide</a> continues with traps, locking, and scripts that visit many hosts.</p>' +
+    '<p>The <a href="https://github.com/krishant624/linux-guide">Linux guide</a> is the wider map of a host. Project scripts from this course live in <code>scripts/</code>.</p>' +
     '<div class="next"><a href="' + prev.lesson.file + '">← ' + esc(prev.lesson.title) + '</a><span></span></div>';
 }
 

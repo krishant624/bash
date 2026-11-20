@@ -1,5 +1,5 @@
-function L(file, title, point, idea, more, diagram, run, kind, call, script, table) {
-  return { file: file, title: title, point: point, idea: idea, more: more, diagram: diagram, run: run, kind: kind, call: call, script: script || "", table: table || null };
+function L(file, title, point, idea, more, diagram, run, kind, call, script, table, sample) {
+  return { file: file, title: title, point: point, idea: idea, more: more, diagram: diagram, run: run, kind: kind, call: call, script: script || "", table: table || null, sample: sample || "" };
 }
 
 var topics = [
@@ -718,12 +718,292 @@ var topics = [
           "The fields are minute, hour, day of month, month, and day of week. A star means every. */5 in the minute field means every fifth minute. The lab's sample line is */5 * * * * du -sh /home/ana/work.",
           "crontab -l lists the table. On a real host, crontab -e edits it. The lab will not install a job or wait five minutes. It shows the line so you can read the fields. The clock in the picture is that line, drawn."
         ],
-        "A cron command does not have your interactive PATH or your current folder. Write absolute paths, /home/ana/work, not ~/work, unless you have tested the exact line cron will use.",
+        "A cron command does not have your interactive PATH or your current folder. Write absolute paths, /home/ana/work, not ~/work, unless you have tested the exact line cron will use. Later pages cover trap and flock so a cron job cleans up and does not overlap itself.",
         "cron",
         ["crontab -l"],
         "insight",
-        "The Bash guide linked below goes on to traps, locking, and scripts that visit more than one host. This course stops where a person can read a host and write a safe script.",
-        "")
+        "Cron only starts the command. The script still needs absolute paths, a lock, and a trap of its own."),
+      L("case.html", "Choose with case",
+        "case picks one branch by matching a value against patterns. It is the clearer form when you have more than two choices.",
+        [
+          "case \"$1\" in start) ... ;; stop) ... ;; *) ... ;; esac reads the first argument and runs the matching branch. Each pattern ends with ). Each branch ends with ;;. esac closes the block.",
+          "The star pattern * is the default, the same job else does for if. Patterns can list alternatives with a pipe: start|on). The lab's practice script uses if, because the practice computer does not run case. The example below is the real Bash form to type on a host."
+        ],
+        "Prefer case when the question is which word is this. Prefer if when the question is a test such as -f or -gt.",
+        "case",
+        [],
+        "insight",
+        "One value, many named branches. That is when case is easier to read than a tower of if.",
+        "action=start\nif [ \"$action\" = start ]; then\n  echo starting\nelif [ \"$action\" = stop ]; then\n  echo stopping\nelse\n  echo unknown\nfi",
+        null,
+        "case \"$1\" in\n  start|on)  echo starting ;;\n  stop|off)  echo stopping ;;\n  *)         echo \"unknown: $1\" >&2; exit 2 ;;\nesac"),
+      L("strings.html", "Change text in a variable",
+        "Parameter expansion edits text inside a variable without calling basename or sed for a one-line change.",
+        [
+          "path=/home/ana/work/notes.txt stores a path. ${path##*/} strips the longest match of */ from the front, leaving notes.txt. ${path%.*} strips the shortest .suffix from the end, leaving /home/ana/work/notes.",
+          "${name:-lab} means use name, or the word lab when name is empty. The practice computer supports that form. The ## and % forms are for a real Bash; the lab shows the idea with a short assignment and echo."
+        ],
+        "Reach for parameter expansion when the edit is a prefix, a suffix, or a default. Reach for sed or awk when the edit is a whole file.",
+        "strings",
+        ["name=", "echo ${name:-lab}", "name=ana", "echo ${name:-lab}"],
+        "insight",
+        "Defaults and stripping a suffix are Bash features. You do not need a second process for those.",
+        "",
+        null,
+        "path=/home/ana/work/notes.txt\necho \"${path##*/}\"\necho \"${path%.*}\"\necho \"${missing:-lab}\""),
+      L("args.html", "Read options with getopts",
+        "getopts walks short options such as -n and -f FILE, and leaves the remaining arguments for you to shift onto.",
+        [
+          "while getopts ':nf:h' opt; do case $opt in ... esac; done is the usual loop. A letter followed by a colon means that option takes a value in OPTARG. After the loop, shift $((OPTIND-1)) drops the options that were already read.",
+          "Write a usage function that prints to stderr and exits 2. Call it for -h and for a missing required value. The practice computer does not run getopts. The script below is what you type on a real host. The lab practice uses a plain $1 check you can run here."
+        ],
+        "Long options such as --verbose need a while [[ $# -gt 0 ]] loop and a case on $1. getopts is for the single-dash letters.",
+        "args",
+        [],
+        "mistake",
+        "Forgetting to shift after getopts. The leftover -$letters then look like file names.",
+        "file=${1:-}\nif [ -z \"$file\" ]; then\n  echo \"Usage: need a file\" >&2\n  exit 2\nfi\necho \"file=$file\"",
+        null,
+        "#!/usr/bin/env bash\nset -euo pipefail\nusage() { echo \"Usage: $0 [-n] -f FILE\" >&2; exit 2; }\ndry=0\nfile=\"\"\nwhile getopts ':nf:h' opt; do\n  case $opt in\n    n) dry=1 ;;\n    f) file=$OPTARG ;;\n    h|?) usage ;;\n  esac\ndone\nshift $((OPTIND-1))\n[[ -n $file ]] || usage\necho \"dry=$dry file=$file rest=$*\""),
+      L("traps.html", "Clean up with trap",
+        "trap runs a command when the script exits or receives a signal. Use it to remove a temp directory you created.",
+        [
+          "tmpdir=$(mktemp -d) creates a unique folder. trap 'rm -rf -- \"$tmpdir\"' EXIT registers cleanup for any exit, success or failure. INT and TERM are the signals Ctrl+C and a polite kill send.",
+          "A die function that prints to stderr and exits 1 keeps error messages in one place. The practice computer does not run trap or mktemp. The lab script shows die with a plain exit. The example is the real form for a host."
+        ],
+        "Put trap right after you create the resource. A trap registered too late cannot clean up a failure that already happened.",
+        "traps",
+        [],
+        "insight",
+        "EXIT is the net under the script. Register it before the risky work.",
+        "die() {\n  echo \"ERROR: $1\" >&2\n  exit 1\n}\nif [ ! -f app.log ]; then\n  die \"missing app.log\"\nfi\necho ok",
+        null,
+        "#!/usr/bin/env bash\nset -euo pipefail\ntmpdir=$(mktemp -d)\ncleanup() { rm -rf -- \"$tmpdir\"; }\ntrap cleanup EXIT INT TERM\necho \"using $tmpdir\"\n# work here; cleanup runs on the way out"),
+      L("debug.html", "Debug a script",
+        "bash -n checks syntax without running. bash -x prints each command as it runs.",
+        [
+          "bash -n script.sh is the first pass after you edit. A missing fi or done shows up there. bash -x script.sh traces expansions so you see the real words after $var and globs.",
+          "A small log function that prints a level and a timestamp to stderr keeps debug noise out of the data on stdout. The practice computer has no bash -n flag. The lab script shows a log line you can run here."
+        ],
+        "Trace one failing path. Turning -x on a whole pipeline of thousands of lines hides the bug in noise.",
+        "debug",
+        [],
+        "insight",
+        "Syntax first with -n. Behavior second with -x. Logging for the cases you will see again.",
+        "log() {\n  echo \"INFO $1\" >&2\n}\nlog \"checking app.log\"\ngrep -q ERROR app.log\nlog \"found ERROR\"",
+        null,
+        "bash -n myscript.sh\nbash -x myscript.sh\n# or inside a script:\n# set -x   # start trace\n# set +x   # stop trace"),
+      L("flock.html", "One run at a time",
+        "flock takes a lock file so a second copy of the same cron job exits instead of overlapping the first.",
+        [
+          "exec 9>\"/tmp/myscript.lock\" opens lock file descriptor 9. flock -n 9 tries to lock it without waiting. If the lock is busy, the script prints already running and exits 0 so cron does not treat the skip as a failure.",
+          "Without a lock, two five-minute cron runs that each take six minutes step on the same files. The practice computer has no flock. The picture is the idea. The example is what you put around the body of a real script."
+        ],
+        "Exit 0 on lock failure when a skip is normal. Exit non-zero when a skipped run is a problem you want monitored.",
+        "flock",
+        [],
+        "caution",
+        "A lock does not replace set -e. It only stops two copies from running the same critical section.",
+        "",
+        null,
+        "#!/usr/bin/env bash\nset -euo pipefail\nlock=/tmp/myscript.lock\nexec 9>\"$lock\"\nif ! flock -n 9; then\n  echo \"already running\" >&2\n  exit 0\nfi\n# critical section\necho \"running $$\""),
+      L("jq.html", "Read JSON with jq",
+        "curl can fetch JSON. jq pulls one field out as plain text a script can test.",
+        [
+          "curl -fsS URL returns the body and fails on HTTP errors when you pass -f. jq -r .status reads the status field and prints it without quotes. Pipe them: curl -fsS URL | jq -r .status.",
+          "The practice computer has curl for the lab app and no jq. The lab practice shows curl. The example is the real host form with jq."
+        ],
+        "When the JSON is nested or large, jq is still the right tool. When the data is a CSV with millions of rows, switch to Python or another language.",
+        "jq",
+        ["curl -I http://lab:8080"],
+        "insight",
+        "Fail the HTTP fetch with curl -f, then pick fields with jq. Do not scrape JSON with grep.",
+        "",
+        null,
+        "#!/usr/bin/env bash\nset -euo pipefail\ncode=$(curl -fsS -o /tmp/body.json -w '%{http_code}' https://example.com/api)\n[[ $code == 200 ]] || { echo \"HTTP $code\" >&2; exit 1; }\njq -r .name /tmp/body.json"),
+      L("security.html", "Keep a script safe",
+        "A script must treat outside text as data. Never eval a string that came from a file, a URL, or a person.",
+        [
+          "eval \"$cmd\" runs whatever is in cmd as Bash code. If cmd came from a user, that is code injection. Quote every \"$variable\", use -- before file names that might start with a dash, and prefer arrays for argument lists.",
+          "Passwords on the command line show up in ps. Prefer an environment variable with a locked-down file, or a secret manager. Do not commit secrets into the repository."
+        ],
+        "sudo inside a script widens every bug to root. Prefer running the whole script as the right user, or one carefully reviewed sudo line.",
+        "security",
+        ["echo \"$HOME\"", "echo -- -n"],
+        "mistake",
+        "eval to \"make quoting easier\". Redesign so you pass arguments, not a string of code.",
+        "",
+        null,
+        "# Bad:  eval \"rm $file\"\n# Good: rm -- \"$file\"\n# Bad:  mysql -p\"$PASS\"   # visible in ps\n# Good: read the password from a 600 file or a secret tool"),
+      L("pitfalls.html", "Classic mistakes",
+        "A short list of Bash mistakes that show up on real hosts, and the fix for each.",
+        [
+          "Unquoted $var splits on spaces. Unquoted $@ does the same. Parsing ls breaks on odd names. for f in $(ls) is the same class of bug. Use a glob or find -print0 with read -d ''.",
+          "A pipeline runs the right-hand side in a subshell, so variables set inside while read stay empty outside. Feed the file with < file instead of piping into while when you need the variables afterward."
+        ],
+        "shellcheck catches many of these before you run the script. Install it and run shellcheck myscript.sh on every change.",
+        "pitfalls",
+        ["echo $HOME", "echo \"$HOME\""],
+        "mistake",
+        "for f in $(ls). The shell already expands *.txt. Let it.",
+        "",
+        { headers: ["Pitfall", "Fix"], rows: [
+          ["Unquoted $var", "\"$var\" and \"$@\""],
+          ["for f in $(ls)", "for f in *.txt or find -print0"],
+          ["file | while read", "while read ...; do ...; done < file"],
+          ["[ $a = x ] with spaces", "[[ $a == x ]] or quote inside ["],
+          ["eval on user data", "Never. Pass arguments instead"]
+        ] }),
+      L("style.html", "Script style",
+        "A readable script has a shebang, strict mode, functions, and one main call at the bottom.",
+        [
+          "Name scripts verb-noun.sh. Name functions snake_case. Put the logic in functions. Call main \"$@\" as the last line so arguments enter in one place.",
+          "Comments explain why a choice was made. The syntax already says what the next line does. Prefer Bash-only features only when the shebang is bash, not sh."
+        ],
+        "Run shellcheck in CI or before you commit. Treat its warnings as real until you understand why they are wrong.",
+        "style",
+        [],
+        "insight",
+        "main \"$@\" at the bottom is the door. Everything else is a named room.",
+        "greet() {\n  echo Hello, $1\n}\nmain() {\n  greet \"${1:-ana}\"\n}\nmain",
+        null,
+        "#!/usr/bin/env bash\nset -euo pipefail\nmain() {\n  # work\n  true\n}\nmain \"$@\""),
+      L("cheat-sheet.html", "Cheat sheet",
+        "A one-page list of the Bash forms this course expects you to keep open while writing a script.",
+        [
+          "The table is the sheet. The practice terminal is still there for a quick echo or test. Project scripts in the next topic reuse these forms end to end."
+        ],
+        "Print this page or leave the tab open. The next topic walks finished scripts that use the same habits.",
+        "sheet",
+        ["echo \"set -euo pipefail\"", "echo \"\\\"\\$@\\\"\""],
+        "insight",
+        "Strict mode, quoted \"$@\", [[ ]], and trap cover most production scripts.",
+        "",
+        { headers: ["Topic", "Form"], rows: [
+          ["Shebang", "#!/usr/bin/env bash"],
+          ["Strict mode", "set -euo pipefail"],
+          ["Test", "[[ -f $f ]]  [[ $a == b ]]"],
+          ["Default", "${x:-default}  ${x:?err}"],
+          ["Arrays", "a=(..)  \"${a[@]}\""],
+          ["Redirect", ">  >>  2>  |&  tee"],
+          ["Special", "$#  $@  $?  $0  $$  $!"],
+          ["Trap", "trap cleanup EXIT"],
+          ["Options", "getopts  then  shift $((OPTIND-1))"]
+        ] })
+    ]
+  },
+  {
+    id: "scripts", title: "Scripts",
+    lessons: [
+      L("projects.html", "Project scripts",
+        "The scripts/ folder holds finished scripts to study on a real host. Each later page explains one of them.",
+        [
+          "The set covers a template, a rotating backup, a log summary, a disk alert, a dry-run renamer, a multi-host SSH runner, and a CSV sampler for df and iostat.",
+          "Read the header of each file before you run it. Prefer a disposable directory, a VM, or WSL. Several scripts touch disks or open SSH."
+        ],
+        "The practice terminal stays a picture of a host. Run the project scripts outside this page, then come back to the lesson that matches the file.",
+        "projects",
+        ["ls", "cat app.log"],
+        "caution",
+        "Project scripts may delete old backups, rename files, or SSH to hosts. Read the usage line first."),
+      L("template.html", "A reusable template",
+        "scripts/30-template.sh is a skeleton: getopts, logging, mktemp with an EXIT trap, and main.",
+        [
+          "Copy it when you start a new tool. Keep log and die. Keep the trap. Replace the body inside main. The -n dry-run and -v verbose flags are already wired.",
+          "The practice computer cannot run the full template. The lab script is a tiny main() shape you can run here. The example is the real file's outline."
+        ],
+        "Open scripts/30-template.sh next to this page. The comments in the file are the map.",
+        "template",
+        [],
+        "insight",
+        "A template is not dead code. It is the checklist you stop retyping.",
+        "log() {\n  echo \"INFO $1\" >&2\n}\nmain() {\n  log \"start\"\n  echo Hello from template\n}\nmain",
+        null,
+        "#!/usr/bin/env bash\n# See scripts/30-template.sh\nset -euo pipefail\ntrap cleanup EXIT INT TERM\nparse_args() { while getopts ':nvh' opt; do ...; done; }\nmain() { parse_args \"$@\"; tmpdir=$(mktemp -d); ...; }\nmain \"$@\""),
+      L("backup.html", "Backup with rotation",
+        "scripts/24-backup.sh archives a directory to a dated .tar.gz, keeps the newest N, and logs the run.",
+        [
+          "Usage: ./24-backup.sh SOURCE_DIR DEST_DIR [KEEP]. The default keep count is 7. It writes to DEST_DIR/backup.log as it works.",
+          "Study the mapfile rotation loop. It lists archives newest first and removes the ones past KEEP. Run it once against a temp folder before you point it at real data."
+        ],
+        "Pair this with cron and flock so two backups do not rotate each other mid-run.",
+        "backup",
+        ["tar -czf learn.tar.gz notes.txt", "tar -tzf learn.tar.gz"],
+        "caution",
+        "Rotation deletes old archives. Confirm DEST_DIR and KEEP on a disposable copy first.",
+        "",
+        null,
+        "# ./scripts/24-backup.sh \"$HOME/docs\" \"$HOME/backups\" 5"),
+      L("log-analyzer.html", "Log analyzer",
+        "scripts/25-log-analyzer.sh counts error, warn, and info style lines and prints the top error-like samples.",
+        [
+          "Usage: ./25-log-analyzer.sh LOGFILE. It uses grep -Eic for counts and head for samples. A missing file exits 1. Wrong usage exits 2.",
+          "The lab practice shows the same idea on app.log with grep -c. The full script is the file under scripts/."
+        ],
+        "Point it at a real app log when you want a one-screen summary before you dig with less or journalctl.",
+        "logalyze",
+        ["grep -c ERROR app.log", "grep -c WARN app.log", "grep ERROR app.log"],
+        "insight",
+        "Counts first, then a short sample. That order is enough for many on-call checks.",
+        "",
+        null,
+        "# ./scripts/25-log-analyzer.sh app.log"),
+      L("disk-monitor.html", "Disk health monitor",
+        "scripts/26-disk-monitor.sh alerts when any mounted filesystem is over a threshold and exits 1 on alert.",
+        [
+          "Usage: ./26-disk-monitor.sh [THRESHOLD_PERCENT]. The default is 85. It reads df -hP, skips tmpfs-style rows, and prints ALERT on stderr when usage is high.",
+          "Cron can run it every few minutes. A non-zero exit is what monitoring hooks watch for. The lab shows df. The threshold logic lives in the script file."
+        ],
+        "Combine with flock if the interval is shorter than the run time on a busy host.",
+        "diskmon",
+        ["df"],
+        "insight",
+        "df answers which filesystem. The script answers whether that percentage crosses your line.",
+        "",
+        null,
+        "# ./scripts/26-disk-monitor.sh 85"),
+      L("bulk-rename.html", "Bulk renamer",
+        "scripts/27-bulk-rename.sh lowercases *.txt names. Default is dry-run. Pass --apply to rename.",
+        [
+          "Usage: ./27-bulk-rename.sh DIR [--apply]. It skips names that would collide with an existing file. Bash ${base,,} needs Bash 4 or newer.",
+          "Dry-run first is the whole point. The lab can rename one file with mv so you see the idea. The script loops a directory safely."
+        ],
+        "Never start with --apply on a directory you have not listed.",
+        "rename",
+        ["cp notes.txt Notes.TXT", "mv Notes.TXT notes-upper.txt", "ls"],
+        "caution",
+        "Dry-run is the default because rename mistakes are hard to undo.",
+        "",
+        null,
+        "# ./scripts/27-bulk-rename.sh ./docs\n# ./scripts/27-bulk-rename.sh ./docs --apply"),
+      L("ssh-runner.html", "Multi-host SSH runner",
+        "scripts/28-ssh-runner.sh runs one command on every host in a file and prints ok/fail counts.",
+        [
+          "Usage: ./28-ssh-runner.sh HOSTS_FILE REMOTE_COMMAND.... Host lines can be hostname or user@host. Lines starting with # are comments. It uses ssh BatchMode so it will not hang on a password prompt.",
+          "You need working key auth. The lab's ssh command only explains the idea. Run the real script from a host that can reach the list."
+        ],
+        "Start with a hosts file of one machine you own. Read the summary line before you scale the list.",
+        "sshrun",
+        ["ssh ana@other"],
+        "caution",
+        "A wrong command on many hosts fails on many hosts. Test the remote command once by hand first.",
+        "",
+        null,
+        "# ./scripts/28-ssh-runner.sh hosts.txt hostname"),
+      L("iostat-csv.html", "df and iostat CSV sampler",
+        "scripts/29-iostat-csv.sh appends timestamped df rows, and iostat rows when sysstat is installed, into a CSV.",
+        [
+          "Usage: ./29-iostat-csv.sh OUT.csv [SAMPLES] [INTERVAL_SEC]. Defaults are 3 samples and 2 seconds. It creates a header on first write.",
+          "Use the CSV later in a chart or a notebook. The lab has df. iostat is optional on the real host; the script falls back to df-only rows."
+        ],
+        "This is for light trending, not a replacement for a metrics stack.",
+        "iostat",
+        ["df"],
+        "insight",
+        "A few CSV rows over time beat a screenshot of top when you need a trend.",
+        "",
+        null,
+        "# ./scripts/29-iostat-csv.sh /tmp/samples.csv 5 2")
     ]
   }
 ];
@@ -748,7 +1028,12 @@ var glossary = [
   ["PATH", "The list of directories Bash searches for a command.", "path.html"],
   ["exit status", "The code a command returns. Zero means success. $? prints it.", "exit-status.html"],
   ["shebang", "The #! line at the top of a script that names the interpreter.", "syntax.html"],
-  ["cron", "The scheduler that runs a command from a five-field clock.", "cron.html"]
+  ["cron", "The scheduler that runs a command from a five-field clock.", "cron.html"],
+  ["case", "A multi-branch match on one value. Patterns end with ) and branches with ;;.", "case.html"],
+  ["getopts", "Bash builtin that walks short options such as -n and -f FILE.", "args.html"],
+  ["trap", "A handler that runs on EXIT or a signal, used for cleanup.", "traps.html"],
+  ["flock", "A file lock so two copies of a job do not overlap.", "flock.html"],
+  ["jq", "A tool that reads JSON and prints selected fields as text.", "jq.html"]
 ];
 
 module.exports = { topics: topics, glossary: glossary };
