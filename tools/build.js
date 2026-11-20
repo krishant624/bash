@@ -262,11 +262,74 @@ var pictures = {
   glossary: flow(["term", "plain meaning", "the lesson"], "Each word points back to the page that used it")
 };
 
+var morePictures = require("./pictures-more.js")({ svg: svg, esc: esc, flow: flow, fields: fields, bars: bars, command: command });
+Object.keys(morePictures).forEach(function (k) {
+  if (pictures[k]) throw new Error("diagram key used twice: " + k);
+  pictures[k] = morePictures[k];
+});
+pictures.path = flow(["Start", "Files", "Text", "Users and\npermissions", "Processes", "Bash", "Schedule", "Disks, LVM,\nZFS, LUKS", "Scripts"], "The path through the course");
+
+var BLURBS = {
+  start: "What the shell is, the terminal, man pages, and which program really runs.",
+  files: "Move around, list, copy, link, redirect, edit, and find files.",
+  text: "grep, regex, cut, sort, uniq, wc, awk, sed, and xargs.",
+  archives: "gzip, bzip2, xz, tar, zip, 7z, and rsync backups.",
+  users: "root, accounts, useradd, usermod, password ageing, and sudo.",
+  permissions: "Owners, groups, chmod, setuid, sticky bits, ACLs, and attributes.",
+  host: "ps, top, nice, kill, jobs, screen, and tmux.",
+  network: "ping, curl, wget, ssh, scp, and rsync over SSH.",
+  bash: "Variables, quotes, tests, loops, functions, arrays, traps, and getopts.",
+  prompt: "Environment, startup files, PATH, history, and the prompt.",
+  schedule: "Time zones, date maths, cron, anacron, at, and systemd timers.",
+  disks: "The file system tree, mounts, fstab, partitions, dd, and SMART.",
+  lvm: "Physical volumes, volume groups, RAID levels, growing, and snapshots.",
+  zfs: "Pools, mirrors, RAIDZ, datasets, properties, snapshots, clones, and scrubs.",
+  luks: "Encrypted disks, key slots, and protecting the boot menu.",
+  scripts: "Finished project scripts to read and adapt."
+};
+
+function widgetHtml(kind, file) {
+  if (kind === "perm") {
+    var who = ["Owner", "Group", "Other"].map(function (w, i) {
+      return "<fieldset><legend>" + w + "</legend>" + ["r", "w", "x"].map(function (b, j) {
+        return '<label><input type="checkbox" data-bit="' + (i * 3 + j) + '"' + (i === 0 && j < 2 || j === 0 ? " checked" : "") + "> " + b + "</label>";
+      }).join("") + "</fieldset>";
+    }).join("");
+    var special = ["setuid", "setgid", "sticky"].map(function (s, i) {
+      return '<label><input type="checkbox" data-special="' + i + '"> ' + s + "</label>";
+    }).join("");
+    return '<figure class="widget wide" data-widget="perm"><h3>Try it: permission calculator</h3>' +
+      '<div class="perm-grid">' + who + '<fieldset><legend>Special</legend>' + special + "</fieldset></div>" +
+      '<div class="widget-out"><span>Octal <b data-out="octal">0644</b></span><span>ls -l <b data-out="sym">-rw-r--r--</b></span><span>Command <code data-out="cmd">chmod 644 file</code></span></div>' +
+      '<label class="widget-row">Or type an octal mode <input type="text" data-in="octal" value="644" maxlength="4" inputmode="numeric" aria-label="Octal mode"></label></figure>';
+  }
+  if (kind === "raid") {
+    var preset = { "lvm-raid0.html": ["linear", 2], "lvm-linear-raid.html": ["linear", 2], "lvm-raid5.html": ["raid5", 3], "zfs-raidz.html": ["raid5", 3] }[file] || ["raid1", 2];
+    var levels = [["linear", "linear / RAID 0"], ["raid1", "RAID 1 mirror"], ["raid5", "RAID 5 / raidz"], ["raid6", "RAID 6 / raidz2"]].map(function (o) {
+      return '<option value="' + o[0] + '"' + (o[0] === preset[0] ? " selected" : "") + ">" + o[1] + "</option>";
+    }).join("");
+    return '<figure class="widget wide" data-widget="raid"><h3>Try it: RAID capacity calculator</h3>' +
+      '<div class="widget-row"><label>Layout <select data-in="level">' + levels + "</select></label>" +
+      '<label>Disks <input type="number" data-in="disks" min="1" max="12" value="' + preset[1] + '"></label>' +
+      '<label>Size of each (GiB) <input type="number" data-in="size" min="1" max="100000" value="10"></label></div>' +
+      '<div class="raid-bar" aria-hidden="true"><span class="use"></span><span class="prot"></span></div>' +
+      '<div class="widget-out"><span>Usable <b data-out="usable">10 GiB</b></span><span>Protection <b data-out="prot">10 GiB</b></span><span>Survives <b data-out="survive">1 disk</b></span></div>' +
+      '<p class="widget-note" data-out="note"></p></figure>';
+  }
+  if (kind === "cron") {
+    return '<figure class="widget wide" data-widget="cron"><h3>Try it: read a cron line</h3>' +
+      '<label class="widget-row">Five fields <input type="text" data-in="cron" value="30 2 * * 1-5" spellcheck="false" aria-label="Cron schedule"></label>' +
+      '<div class="cron-fields" data-out="fields"></div><p class="widget-out" data-out="say"></p>' +
+      '<div class="chips"><button type="button" data-cron="*/15 * * * *">every 15 min</button><button type="button" data-cron="0 2 * * *">02:00 daily</button><button type="button" data-cron="30 6 * * 1-5">weekdays 06:30</button><button type="button" data-cron="0 0 1 * *">monthly</button><button type="button" data-cron="0 9-17 * * 1-5">office hours</button></div></figure>';
+  }
+  throw new Error("unknown widget " + kind);
+}
+
 function transcript(commands, script) {
   var state = lab.createState();
   var lines = [];
   (commands || []).forEach(function (cmd) {
-    var res = lab.runLine(state, cmd);
+    var res = lab.runTyped(state, cmd);
     var shown = "$ " + cmd;
     if (res.stdout) shown += "\n" + res.stdout.replace(/\n$/, "");
     if (res.stderr) shown += "\n" + res.stderr.replace(/\n$/, "");
@@ -290,12 +353,14 @@ function labHtml(lesson) {
     ? '<button type="button" class="lab-try">Try the example</button>'
     : "";
   return '<div class="lab" data-example="' + esc(example) + '">' +
+    '<div class="lab-chrome" aria-hidden="true"><i></i><i></i><i></i><span>ana@lab: ~/work — practice terminal</span></div>' +
     '<p class="lab-banner">Practice computer. This is not your PC. Reset puts the practice files back.</p>' +
     '<div class="lab-screen" role="log" aria-live="polite"></div>' +
     script +
     '<form class="lab-form"><label class="lab-prompt">ana@lab:~/work$</label>' +
     '<input class="lab-input" autocomplete="off" spellcheck="false" aria-label="Practice command"></form>' +
-    '<div class="lab-actions">' + tryBtn + '<button type="button" class="lab-reset">Reset lab</button></div></div>';
+    '<div class="lab-actions">' + tryBtn + '<button type="button" class="lab-reset">Reset lab</button>' +
+    '<span class="lab-keys">Tab completes · ↑ ↓ history · Ctrl+L clears · type help</span></div></div>';
 }
 
 function figure(name) {
@@ -360,7 +425,8 @@ function navHtml(topics, currentFile) {
       '<button type="button" class="twist" aria-expanded="' + (open ? "true" : "false") + '" aria-controls="lessons-' + topic.id + '" aria-label="' +
       (open ? "Hide" : "Show") + " lessons in " + esc(topic.title) + '"></button></div><ol class="lessons" id="lessons-' + topic.id + '">' + lessons + "</ol></li>";
   }).join("");
-  return '<nav class="sidebar" aria-label="Topics"><h2>Topics</h2><ol class="topics">' + items +
+  return '<nav class="sidebar" aria-label="Topics"><div class="side-search"><input type="search" placeholder="Search lessons  ( / )" aria-label="Search lessons" autocomplete="off"></div>' +
+    '<p class="search-empty" hidden>No lesson title matches.</p><h2>Topics</h2><ol class="topics">' + items +
     '</ol><p class="note">The practice terminal is not your computer. Reset puts the practice files back.</p></nav>';
 }
 
@@ -373,9 +439,21 @@ function stripHtml(topics, currentTopic) {
     links + '</div><button type="button" class="strip-arrow" data-strip="right" aria-label="Scroll topics right">❯</button></div>';
 }
 
+function courseMap() {
+  var total = 0;
+  var cards = course.topics.map(function (topic, ti) {
+    total += topic.lessons.length;
+    return '<a class="topic-card" href="' + topic.lessons[0].file + '"><span class="tc-num">' + (ti + 1) + "</span><b>" + esc(topic.title) + "</b>" +
+      "<span>" + esc(BLURBS[topic.id] || "") + '</span><em>' + topic.lessons.length + " lessons</em></a>";
+  }).join("");
+  return '<h2>Course map</h2><p class="muted">' + course.topics.length + " topics and " + total + " lessons. Every lesson has a picture, a worked example, and a practice terminal.</p>" +
+    '<div class="course-map wide">' + cards + "</div>";
+}
+
 function homeExtra() {
-  return '<h2>Who it is for</h2><p>Someone who SSHes into a Linux host and needs the shell: to read a log, copy a file, see why a disk is full, and write a script that stops when something fails. The path runs from the prompt through Bash syntax, then into traps, getopts, locking, and finished project scripts under <code>scripts/</code>. The <a href="https://github.com/krishant624/linux-guide">Linux guide</a> is the wider map of a host.</p>' +
-    '<h2>Where this course goes further</h2><div class="cards wide"><div class="mini"><h3>Pipes</h3><p>stdin, stdout, and stderr, drawn as a stream, not one example of |.</p></div><div class="mini"><h3>Globs and quotes</h3><p>Why <code>*.txt</code> and <code>\'*.txt\'</code> are different words by the time a command starts.</p></div><div class="mini"><h3>find and links</h3><p>Walking a tree, and a name that points at another file.</p></div><div class="mini"><h3>PATH and exit codes</h3><p>Why a command disappears, and why zero means it worked.</p></div><div class="mini"><h3>Traps and getopts</h3><p>Cleanup on EXIT, and short options a script can parse.</p></div><div class="mini"><h3>Project scripts</h3><p>Backup, log summary, disk alert, rename, SSH runner, and a CSV sampler.</p></div></div>' +
+  return courseMap() +
+    '<h2>Who it is for</h2><p>Someone who SSHes into a Linux host and needs the shell: to read a log, copy a file, add a user, see why a disk is full, build an LVM volume or a ZFS pool, schedule a job, and write a script that stops when something fails. The path runs from the prompt through files, text tools, users and permissions, processes, and Bash syntax, then into scheduling and storage, and ends with finished project scripts under <code>scripts/</code>. The <a href="https://github.com/krishant624/linux-guide">Linux guide</a> is the wider map of a host.</p>' +
+    '<h2>Where this course goes further</h2><div class="cards wide"><div class="mini"><h3>Pipes</h3><p>stdin, stdout, and stderr, drawn as a stream, not one example of |.</p></div><div class="mini"><h3>Globs and quotes</h3><p>Why <code>*.txt</code> and <code>\'*.txt\'</code> are different words by the time a command starts.</p></div><div class="mini"><h3>find and links</h3><p>Walking a tree, and a name that points at another file.</p></div><div class="mini"><h3>PATH and exit codes</h3><p>Why a command disappears, and why zero means it worked.</p></div><div class="mini"><h3>Traps and getopts</h3><p>Cleanup on EXIT, and short options a script can parse.</p></div><div class="mini"><h3>Project scripts</h3><p>Backup, log summary, disk alert, rename, SSH runner, and a CSV sampler.</p></div><div class="mini"><h3>Storage you can break</h3><p>Partition, format, and mount spare disks, then build LVM, RAID, ZFS pools, and LUKS volumes without touching a real machine.</p></div><div class="mini"><h3>Calculators</h3><p>Click permission bits, size a RAID set, and read a cron line in plain words.</p></div></div>' +
     '<h2>The practice files</h2><div class="table-wrap wide"><table><thead><tr><th>Path</th><th>What it is for</th></tr></thead><tbody>' +
     "<tr><td><code>~/work/app.log</code></td><td>Five log lines. One of them is ERROR.</td></tr>" +
     "<tr><td><code>~/work/notes.txt</code></td><td>A short note about the lab.</td></tr>" +
@@ -383,6 +461,9 @@ function homeExtra() {
     "<tr><td><code>~/work/sizes.txt</code></td><td>The numbers 10, 2, and 1, so text sort and numeric sort disagree.</td></tr>" +
     "<tr><td><code>~/work/reports/monday.txt</code></td><td>A file in a subfolder, so find has somewhere to walk.</td></tr>" +
     "<tr><td><code>~/.bashrc</code></td><td>A saved alias. <code>ls</code> hides it until you ask.</td></tr>" +
+    "<tr><td><code>/dev/sdb</code></td><td>A 15 GB USB stick with one partition, for mount and fstab lessons.</td></tr>" +
+    "<tr><td><code>/dev/sdc</code> to <code>/dev/sdf</code></td><td>Four blank 10 GB disks for partitions, LVM, RAID, ZFS, and LUKS.</td></tr>" +
+    "<tr><td><code>ken</code>, <code>mina</code></td><td>Other users, so ownership, groups, and sudo have someone to act on.</td></tr>" +
     "<tr><td><code>scripts/</code></td><td>Finished project scripts to study on a real host or in a disposable directory.</td></tr>" +
     "</tbody></table></div>" +
     '<h2>How to practice</h2><ol class="steps"><li>Read the point and the picture.</li><li>Read the worked example. The output is what this lab prints.</li><li>Press Try the example, or type the command yourself.</li><li>Press Reset lab if you want the original files back.</li><li>For project scripts, open the file under <code>scripts/</code> and run it in a VM, WSL, or temp folder.</li></ol>';
@@ -405,14 +486,16 @@ function article(item, prev, next) {
   var kind = lesson.kind || "insight";
   var label = { insight: "Insight", mistake: "Mistake", analogy: "Analogy", caution: "Caution" }[kind] || "Insight";
   var nextHtml = '<div class="next">' +
-    (prev ? '<a href="' + prev.lesson.file + '">← ' + esc(prev.lesson.title) + "</a>" : "<span></span>") +
-    (next ? '<a href="' + next.lesson.file + '">' + esc(next.lesson.title) + " →</a>" : "<span></span>") +
+    (prev ? '<a rel="prev" href="' + prev.lesson.file + '">← ' + esc(prev.lesson.title) + "</a>" : "<span></span>") +
+    (next ? '<a rel="next" href="' + next.lesson.file + '">' + esc(next.lesson.title) + " →</a>" : "<span></span>") +
     "</div>";
-  return "<h1>" + esc(lesson.title) + "</h1>" +
+  return '<p class="eyebrow">' + esc(item.topic.title) + " · Lesson " + item.num + " · " + (item.topic.lessons.indexOf(lesson) + 1) + " of " + item.topic.lessons.length + "</p>" +
+    "<h1>" + esc(lesson.title) + "</h1>" +
     '<p class="point"><strong>Point of this page.</strong> ' + esc(lesson.point) + "</p>" +
     lesson.idea.map(function (p) { return "<p>" + esc(p) + "</p>"; }).join("") +
     "<p>" + esc(lesson.more) + "</p>" +
     figure(lesson.diagram) +
+    (lesson.widget ? widgetHtml(lesson.widget, lesson.file) : "") +
     tableHtml(lesson.table) +
     (lesson.file === "index.html" ? homeExtra() : "") +
     example +
@@ -439,6 +522,21 @@ topics.push({
   lessons: [{ file: "glossary.html", title: "Glossary", diagram: "path" }]
 });
 
+// OneDrive sync can briefly lock or dehydrate a page while it uploads.
+function writeRetry(file, text) {
+  for (var tries = 0; ; tries++) {
+    try {
+      if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === text) return;
+      fs.writeFileSync(file, text);
+      return;
+    } catch (e) {
+      if (tries >= 20) throw e;
+      try { fs.unlinkSync(file); } catch (e2) { /* still locked */ }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+    }
+  }
+}
+
 var list = flatLessons(topics);
 var missing = [];
 list.forEach(function (item) {
@@ -459,7 +557,7 @@ list.forEach(function (item, i) {
     nav: navHtml(topics, item.lesson.file),
     article: body
   });
-  fs.writeFileSync(path.join(root, item.lesson.file), html);
+  writeRetry(path.join(root, item.lesson.file), html);
 });
 
 console.log("wrote " + list.length + " pages");

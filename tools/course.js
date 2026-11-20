@@ -352,7 +352,7 @@ var topics = [
         "mistake",
         "Reading df and then deleting files in your home at random. df names the filesystem. You still have to find the directory that filled it.",
         "",
-        { headers: ["Filesystem", "Size", "Used", "Free", "Use", "Mount"], rows: [["/dev/vda1", "20G", "8.2G", "11G", "42%", "/"]] }),
+        { headers: ["Filesystem", "Size", "Used", "Free", "Use", "Mount"], rows: [["/dev/sda2", "20G", "8.2G", "11G", "42%", "/"], ["/dev/sda1", "974M", "180M", "727M", "20%", "/boot"]] }),
       L("du.html", "See which folder is large",
         "du adds up the bytes in a folder. df told you the disk is 42 percent full. du tells you where those bytes sit.",
         [
@@ -379,7 +379,7 @@ var topics = [
         "kill sends a signal to a pid. The polite signal asks the process to exit. The forceful one does not ask.",
         [
           "kill 880 sends TERM, signal 15, to the app. A well-written process closes its files and exits. kill -9 880 sends KILL, which the process cannot catch. The operating system removes it.",
-          "The lab tells you which signal it would send and leaves the ps picture in place, so you can still see the row. It refuses pid 1. Signaling systemd on a real host can take the machine down."
+          "In the lab, TERM or KILL removes the row, so ps no longer lists it. pid 1 is refused with Operation not permitted, the same answer a normal user gets on a real host. Signaling systemd as root can take the machine down."
         ],
         "Use the pid from ps, not a pid you remember from yesterday. Pid numbers are reused after a process exits.",
         "kill",
@@ -603,7 +603,7 @@ var topics = [
           "echo $PATH on the lab is /usr/bin. type ls says ls is /usr/bin/ls. Builtins such as cd, echo, and pwd do not use PATH. They are part of the shell.",
           "export PATH=/nope makes ls disappear: command not found. echo still works, because echo is a builtin. export PATH=/usr/bin puts the commands back. Reset lab also restores PATH."
         ],
-        "command not found almost always means the program is not installed, or the directory that holds it is not on PATH. which and type are how you tell those two cases apart. This lab has no which. type is the builtin.",
+        "command not found almost always means the program is not installed, or the directory that holds it is not on PATH. which and type are how you tell those two cases apart. which only searches PATH, so it misses builtins and aliases. type knows all of them.",
         "path",
         ["type ls", "export PATH=/nope", "ls", "echo still-here", "export PATH=/usr/bin", "ls"],
         "mistake",
@@ -716,9 +716,9 @@ var topics = [
         "cron runs a command on a schedule. Five fields say when, and the rest of the line is the command.",
         [
           "The fields are minute, hour, day of month, month, and day of week. A star means every. */5 in the minute field means every fifth minute. The lab's sample line is */5 * * * * du -sh /home/ana/work.",
-          "crontab -l lists the table. On a real host, crontab -e edits it. The lab will not install a job or wait five minutes. It shows the line so you can read the fields. The clock in the picture is that line, drawn."
+          "crontab -l lists the table. On a real host, crontab -e edits it. The lab cannot open an editor or wait five minutes, but it can install a table from a pipe, which the next lesson uses. The clock in the picture is the sample line, drawn."
         ],
-        "A cron command does not have your interactive PATH or your current folder. Write absolute paths, /home/ana/work, not ~/work, unless you have tested the exact line cron will use. Later pages cover trap and flock so a cron job cleans up and does not overlap itself.",
+        "A cron command does not have your interactive PATH or your current folder. Write absolute paths, /home/ana/work, not ~/work, unless you have tested the exact line cron will use. The trap and flock lessons in the Bash topic show how a cron job cleans up and avoids overlapping itself.",
         "cron",
         ["crontab -l"],
         "insight",
@@ -1096,5 +1096,63 @@ var at = topics.indexOf(scriptTopic);
 topics.splice(at, 0, extra.promptTopic);
 
 glossary = glossary.concat(extra.glossary);
+
+var more = require("./more-lessons.js");
+var storage = require("./storage-lessons.js");
+
+function take(topicId, file) {
+  var lessons = topicById(topicId).lessons;
+  for (var i = 0; i < lessons.length; i++) if (lessons[i].file === file) return lessons.splice(i, 1)[0];
+  throw new Error("missing lesson " + file);
+}
+function reorder(topicId, files) {
+  var topic = topicById(topicId);
+  var picked = files.map(function (f) { return take(topicId, f); });
+  topic.lessons = picked.concat(topic.lessons);
+}
+
+after("start", "what-the-shell-is.html", more.afterShell);
+after("start", "man.html", more.afterMan);
+after("files", "cat.html", more.afterCat);
+after("files", "touch.html", more.afterTouch);
+after("files", "mkdir.html", more.afterMkdir);
+after("files", "nano.html", [take("bash", "vim.html")]);
+after("files", "links.html", more.afterLinks);
+after("files", "find.html", more.afterFind);
+after("text", "regex.html", more.afterRegex);
+after("text", "sort.html", more.afterSort);
+after("text", "awk.html", more.afterAwk);
+after("text", "sed.html", more.afterSed);
+
+before("archives", "zip.html", more.archiveFront.concat([take("archives", "tar.html")]).concat(more.afterTar));
+after("archives", "unzip.html", more.afterUnzip);
+
+after("permissions", "ownership.html", more.afterOwnership);
+after("permissions", "chgrp.html", more.afterChgrp);
+
+var host = topicById("host");
+host.title = "Processes";
+after("host", "top.html", more.afterTop);
+after("host", "kill.html", more.afterKill);
+
+var prompt = topicById("prompt");
+prompt.title = "Shell setup";
+prompt.lessons = more.shellSetupFront.concat(prompt.lessons);
+after("prompt", "readline.html", more.afterReadline);
+reorder("prompt", ["env.html", "login-shell.html", "bashrc.html", "path-setup.html", "history.html", "history-more.html", "ps1.html", "color.html", "cursor.html", "tty.html", "readline.html"]);
+
+var scheduleTopic = { id: "schedule", title: "Schedule", lessons: storage.scheduleFront.concat([take("bash", "cron.html")]).concat(storage.afterCron) };
+var disksTopic = { id: "disks", title: "Disks", lessons: storage.disksFront.concat([take("host", "df.html"), take("host", "du.html")]).concat(storage.afterDu) };
+
+function placeAfter(id, list) {
+  var i = topics.indexOf(topicById(id));
+  topics.splice.apply(topics, [i + 1, 0].concat(list));
+}
+var archives = topics.splice(topics.indexOf(topicById("archives")), 1)[0];
+var perms = topics.splice(topics.indexOf(topicById("permissions")), 1)[0];
+placeAfter("text", [archives, more.usersTopic, perms]);
+placeAfter("prompt", [scheduleTopic, disksTopic, storage.lvmTopic, storage.zfsTopic, storage.luksTopic]);
+
+glossary = glossary.concat(more.glossary, storage.glossary);
 
 module.exports = { topics: topics, glossary: glossary };
